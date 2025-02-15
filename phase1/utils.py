@@ -1,3 +1,4 @@
+from time import sleep
 from math import dist, pi, copysign
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 import sys
@@ -7,14 +8,24 @@ sim = client.getObject('sim')
 DYN_LOCK_PARAM_ID = 2002
 
 class Robot_Swarm:
-    def __init__(self, base, rows, cols, spacing):
-        self.base_name = base.split('00')[0].split('/')[1]
+    def __init__(self, base, rows, cols, spacing, left_dummy='dummyL', right_dummy='dummyR', front_dummy='dummyF', back_dummy='dummyB'):
+        """
+        :param base: base robot name,should include 00 at the end
+        :param rows: number of rows for the robotic grid
+        :param cols: number of columns for the robotic grid
+        :param spacing: spacing to create the robots with
+        """
+        self.base_name = base.split('0_0')[0].split('/')[1]
         print(f'Robot Name:{self.base_name}')
         self.base = sim.getObject(base)
         self.rows = rows
         self.cols = cols
         self.spacing = spacing
         self.distances = [[None for j in range(cols)]for i in range(rows)]
+        self.front_dummy = front_dummy
+        self.back_dummy = back_dummy
+        self.right_dummy = right_dummy
+        self.left_dummy = left_dummy
 
     def create_swarm(self, created=False):
         if not created:
@@ -47,7 +58,7 @@ class Robot_Swarm:
                 except Exception as e:
                     print(f"Failed to set position for new robot copy ({i},{j}):", e)
 
-                alias_name = f'{self.base_name}{i}{j}'
+                alias_name = f'{self.base_name}{i}_{j}'
                 try:
                     sim.setObjectAlias(new_robot_handle, alias_name)
                 except Exception as e:
@@ -58,25 +69,25 @@ class Robot_Swarm:
     def link(self):
         for i in range(self.rows):
             for j in range(self.cols):
-                dummyB = sim.getObject(f"/{self.base_name}{i}{j}/dummyB")
-                dummyR = sim.getObject(f"/{self.base_name}{i}{j}/dummyR")
+                dummyB = sim.getObject(f"/{self.base_name}{i}_{j}/{self.back_dummy}")
+                dummyR = sim.getObject(f"/{self.base_name}{i}_{j}/{self.right_dummy}")
                 if i != 0:
-                    otherL = sim.getObject(f"/{self.base_name}{i - 1}{j}/dummyL")
+                    otherL = sim.getObject(f"/{self.base_name}{i - 1}_{j}/{self.left_dummy}")
                     sim.setLinkDummy(dummyR, otherL)
                 if j != 0:
-                    otherF = sim.getObject(f"/{self.base_name}{i}{j - 1}/dummyF")
+                    otherF = sim.getObject(f"/{self.base_name}{i}_{j - 1}/{self.front_dummy}")
                     sim.setLinkDummy(dummyB, otherF)
 
-    def move(self, forward, right):
+    def move(self, forward, left):
+        turn_speed_scalar = 60.5 / 9    # Constant for calibrating speed to match degrees per seconds(sort of)
         for i in range(self.rows):
             for j in range(self.cols):
-                speed_joint = sim.getObject(f'/Robot{i}{j}/Turn_joint/Speed_joint')
-                turn_joint = sim.getObject(f'/Robot{i}{j}/Turn_joint')
+                speed_joint = sim.getObject(f'/Robot{i}_{j}/Turn_joint/Speed_joint')
+                turn_joint = sim.getObject(f'/Robot{i}_{j}/Turn_joint')
                 # Stop turn joints for now
                 sim.setJointInterval(turn_joint, False, [0.0, 0.0])
-                sim.setJointTargetVelocity(turn_joint, 0)
-                sim.setJointTargetPosition(turn_joint, 0)
-                turn_speed = right * self.distances[i][j][0] * self.distances[i][j][1]
+
+                turn_speed = left * self.distances[i][j][0] * self.distances[i][j][1] * self.distances[i][j][2] * turn_speed_scalar
                 sim.setJointTargetVelocity(speed_joint, forward + turn_speed)
                 print(f'{sim.getJointTargetVelocity(speed_joint)}', end=',')
             print()
@@ -87,21 +98,33 @@ class Robot_Swarm:
         for i in range(self.rows):
             for j in range(self.cols):
                 robot_center = (i * robot_size + robot_size / 2, j * robot_size + robot_size / 2)
-                if center[1] - robot_center[1] == 0:
+                if center[0] - robot_center[0] == 0:
                     dir = 0
                 else:
-                    dir = (center[1] - robot_center[1]) / abs(center[1] - robot_center[1])
-                self.distances[i][j] = (dist(center, robot_center), dir * -1)   # 0-distance 1-directionality
+                    dir = (center[0] - robot_center[0]) / abs(center[0] - robot_center[0])
 
+                self.distances[i][j] = (dist(center, robot_center), dir, abs((i+0.5) * robot_size - center[0]))   # 0-distance 1-directionality, 2-distance from center
+                # print(self.distances[i][j][2])
 
 if __name__ == '__main__':
-    swarm = Robot_Swarm('/Robot00', 3, 3, 0.12)
+    swarm = Robot_Swarm('/Robot0_0', 5, 5, 0.12)
     swarm.create_swarm(True)
-    swarm.move(0, 100)
+    swarm.move(0, -5)
 
+    r = sim.getObject('/Robot0_0')
+    start_yaw = None
     try:
+        sim.stopSimulation()
+        sleep(0.1)
         sim.startSimulation()
         while True:
+            angles = sim.getObjectOrientation(r)
+            yaw, _, _ = sim.alphaBetaGammaToYawPitchRoll(*angles)
+            if not start_yaw:
+                start_yaw = yaw
+            if abs(yaw - start_yaw) >= pi / 2:
+                sim.pauseSimulation()
+            print(f'yaw:{yaw}')
             t = sim.getSimulationTime()
             print(f'Simulation time: {t:.2f} [s]')
             sim.step()
