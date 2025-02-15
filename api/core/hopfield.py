@@ -52,5 +52,6 @@ def create_grid_positions(rows=5, cols=3):
     return [(2 * i - rows + 1, 2 * j - cols + 1)
             for i in range(rows) for j in range(cols)]
 
+
 if __name__ == '__main__':
     pass
