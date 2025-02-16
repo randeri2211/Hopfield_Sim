@@ -106,7 +106,8 @@ class Robot_Swarm:
                     otherF = sim.getObject(f"{self.base_name}{i}_{j - 1}/{self.front_dummy}")
                     sim.setLinkDummy(dummyB, otherF)
 
-    def move(self, forward, left):
+    def move(self, forward, left, draw_text=False):
+        sim.pauseSimulation()
         turn_speed_scalar = 60.5 / 9  # Constant for calibrating speed to match degrees per seconds(sort of)
         for i in range(self.rows):
             for j in range(self.cols):
@@ -119,31 +120,32 @@ class Robot_Swarm:
                 sim.setJointTargetVelocity(speed_joint, forward + turn_speed)
                 joint_speed = f'{sim.getJointTargetVelocity(speed_joint):.2f}'
 
-                parent = sim.getObject(f'{self.base_name}{i}_{j}')
-                index = 0
-                obj = sim.getObjectChild(parent, index)
-                while obj != -1:
-                    if sim.getProperty(obj, 'dummyType', {'noError': True}) == 8:
-                        obj2 = sim.getObjectChild(obj, 0)
-                        sim.removeObject(obj2)
-                        sim.removeObject(obj)
-                    else:
-                        index += 1
-
+                if draw_text:
+                    parent = sim.getObject(f'{self.base_name}{i}_{j}')
+                    index = 0
                     obj = sim.getObjectChild(parent, index)
+                    while obj != -1:
+                        if sim.getProperty(obj, 'dummyType', {'noError': True}) == 8:
+                            obj2 = sim.getObjectChild(obj, 0)
+                            sim.removeObject(obj2)
+                            sim.removeObject(obj)
+                        else:
+                            index += 1
 
-                # Create a 3D text shape
-                textShapeHandle = sim.generateTextShape(joint_speed, [1, 1, 1], 0.01)
+                        obj = sim.getObjectChild(parent, index)
 
-                # Parent the shape to the robot
-                sim.setObjectParent(textShapeHandle, parent, True)
+                    # Create a 3D text shape
+                    textShapeHandle = sim.generateTextShape(joint_speed, [1, 1, 1], 0.01)
 
-                # Position the text shape a bit above the robot
-                sim.setObjectPosition(textShapeHandle, parent, [0, 0, 0.026])
+                    # Parent the shape to the robot
+                    sim.setObjectParent(textShapeHandle, parent, True)
 
-                # Rotate the text 90° around the X axis relative to 'parent'
-                sim.setObjectOrientation(textShapeHandle, parent, [0, 0, 0])
+                    # Position the text shape a bit above the robot
+                    sim.setObjectPosition(textShapeHandle, parent, [0, 0, 0.026])
 
+                    # Rotate the text 90° around the X axis relative to 'parent'
+                    sim.setObjectOrientation(textShapeHandle, parent, [0, 0, 0])
+        sim.startSimulation()
 
     def calc_distance_center(self):
         robot_size = 0.1  # 0.1 x 0.1
@@ -161,25 +163,29 @@ class Robot_Swarm:
 
 
 if __name__ == '__main__':
-    swarm = Robot_Swarm('/Robot0_0', 7, 5, 0.12)
+    swarm = Robot_Swarm('/Robot0_0', 4, 4, 0.12)
     sim.stopSimulation()
     swarm.create_swarm()
-    swarm.move(10, -10)
 
     r = sim.getObject('/Robot0_0')
     start_yaw = None
     try:
         sleep(0.1)
         sim.startSimulation()
+        swarm.move(0, -10)
+        done = False
         while True:
             angles = sim.getObjectOrientation(r)
             yaw, _, _ = sim.alphaBetaGammaToYawPitchRoll(*angles)
             if not start_yaw:
                 start_yaw = yaw
-            # if abs(yaw - start_yaw) >= pi / 2:
-            #     sim.pauseSimulation()
             print(f'yaw:{yaw}')
             t = sim.getSimulationTime()
+
+            if t > 2 and not done:
+                done = True
+                swarm.move(0, 10, True)
+
             print(f'Simulation time: {t:.2f} [s]')
             sim.step()
     except:
