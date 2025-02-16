@@ -1,5 +1,6 @@
+import math
 from time import sleep
-from math import dist, pi
+from math import dist, cos, atan2
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 
 client = RemoteAPIClient()
@@ -27,6 +28,11 @@ class Robot_Swarm:
         self.right_dummy = right_dummy
         self.left_dummy = left_dummy
         self.swarm = None
+        self.wheel_size = None
+
+    def figure_wheel_size(self):
+        wheel_handle = sim.getObject(f'{self.base_name}0_0/Turn_joint/Speed_joint/Wheel')
+        self.wheel_size = sim.getShapeGeomInfo(wheel_handle)[2][0]  # Get the x dimension of the wheel shape
 
     def create_swarm(self):
         """Creates the swarm with the given params on init"""
@@ -44,6 +50,7 @@ class Robot_Swarm:
         self.duplicate()
         self.link()
         self.calc_distance_center()
+        self.figure_wheel_size()
 
     def cull(self):
         """Cull all objects in the swarm except the original"""
@@ -111,12 +118,12 @@ class Robot_Swarm:
 
     def move(self, forward, left, draw_text=False):
         """
-        :param forward: Forward motion strength
-        :param left: Left motion strength
+        :param forward: Forward motion speed (meters/second)
+        :param left: Left turn speed (degrees/second)
         :param draw_text: Boolean flag,whether to draw the text onto the robot(Very time-consuming!)
         """
         sim.pauseSimulation()
-        turn_speed_scalar = 60.5 / 9  # Constant for calibrating speed to match degrees per seconds(sort of)
+        forward_speed_wheel = forward / (self.wheel_size / 2)
         for i in range(self.rows):
             for j in range(self.cols):
                 speed_joint = sim.getObject(f'{self.base_name}{i}_{j}/Turn_joint/Speed_joint')
@@ -125,8 +132,9 @@ class Robot_Swarm:
                 # Stop turn joints for now
                 sim.setJointInterval(turn_joint, False, [0.0, 0.0])
 
-                turn_speed = left * self.distances[i][j] * turn_speed_scalar
-                sim.setJointTargetVelocity(speed_joint, forward + turn_speed)
+                turn_speed = left * self.distances[i][j]
+                sim.setJointTargetVelocity(speed_joint, forward_speed_wheel + turn_speed)
+
                 if draw_text:
 
                     parent = sim.getObject(f'{self.base_name}{i}_{j}')
@@ -143,7 +151,6 @@ class Robot_Swarm:
                         obj = sim.getObjectChild(parent, index)
 
                     joint_speed = sim.getJointTargetVelocity(speed_joint)
-                    print(joint_speed)
 
                     # Create a 3D text shape
                     textShapeHandle = sim.generateTextShape(f'{"minus" if joint_speed < 0 else ""}{joint_speed:.2f}', [1, 1, 1], 0.01, True)
@@ -173,11 +180,15 @@ class Robot_Swarm:
                 if center[0] - robot_center[0] == 0:
                     direction = 0
                 else:
-                    direction = (center[0] - robot_center[0]) / abs(center[0] - robot_center[0])
+                    direction = 1
 
                 column_distance_to_center = abs((i + 0.5) * robot_size - center[0])
-
-                self.distances[i][j] = distance_to_center * direction * column_distance_to_center
+                product = 1 / cos(atan2(robot_center[1] - center[1], robot_center[0] - center[0]))
+                self.distances[i][j] = (distance_to_center
+                                        * direction
+                                        * product
+                                        # * column_distance_to_center
+                                        )
 
 
 if __name__ == '__main__':
@@ -190,7 +201,7 @@ if __name__ == '__main__':
     try:
         sleep(0.1)
         sim.startSimulation()
-        swarm.move(0, -10, True)
+        swarm.move(0, 90, False)
         done = False
         while True:
             angles = sim.getObjectOrientation(r)
@@ -200,10 +211,11 @@ if __name__ == '__main__':
             print(f'yaw:{yaw}')
             t = sim.getSimulationTime()
 
-            if t > 2 and not done:
+            if t > 1 and not done:
                 done = True
-                swarm.move(0, 10, True)
-
+                # swarm.move(0, 0, False)
+                sim.pauseSimulation()
+                break
             print(f'Simulation time: {t:.2f} [s]')
             sim.step()
     except Exception as e:
