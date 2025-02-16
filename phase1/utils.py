@@ -29,6 +29,7 @@ class Robot_Swarm:
         self.swarm = None
 
     def create_swarm(self):
+        """Creates the swarm with the given params on init"""
         self.swarm = sim.getObject('/Swarm', {'noError': True})
         #  No Swarm
         if self.swarm < 0:
@@ -45,13 +46,13 @@ class Robot_Swarm:
         self.calc_distance_center()
 
     def cull(self):
+        """Cull all objects in the swarm except the original"""
         try:
             index = 0
             robot = sim.getObjectChild(self.swarm, index)
             while robot != -1:
                 robot_name = sim.getObjectAlias(robot)
                 if f'{robot_name}' != f'{self.base_name}0_0':
-                    print(f'Culling {robot_name}')
                     sim.removeModel(robot)
                 else:
                     index += 1
@@ -62,6 +63,7 @@ class Robot_Swarm:
         print('Done Culling')
 
     def duplicate(self):
+        """Duplicates the base robot according to params given on init"""
         start_x = 0.0
         start_y = 0.0
 
@@ -95,6 +97,7 @@ class Robot_Swarm:
         print("Done creating robot swarm.")
 
     def link(self):
+        """Links all the swarm robots together via the dummies"""
         for i in range(self.rows):
             for j in range(self.cols):
                 dummyB = sim.getObject(f"{self.base_name}{i}_{j}/{self.back_dummy}")
@@ -107,20 +110,25 @@ class Robot_Swarm:
                     sim.setLinkDummy(dummyB, otherF)
 
     def move(self, forward, left, draw_text=False):
+        """
+        :param forward: Forward motion strength
+        :param left: Left motion strength
+        :param draw_text: Boolean flag,whether to draw the text onto the robot(Very time-consuming!)
+        """
         sim.pauseSimulation()
         turn_speed_scalar = 60.5 / 9  # Constant for calibrating speed to match degrees per seconds(sort of)
         for i in range(self.rows):
             for j in range(self.cols):
                 speed_joint = sim.getObject(f'{self.base_name}{i}_{j}/Turn_joint/Speed_joint')
                 turn_joint = sim.getObject(f'{self.base_name}{i}_{j}/Turn_joint')
+
                 # Stop turn joints for now
                 sim.setJointInterval(turn_joint, False, [0.0, 0.0])
 
-                turn_speed = left * self.distances[i][j][0] * self.distances[i][j][1] * self.distances[i][j][2] * turn_speed_scalar
+                turn_speed = left * self.distances[i][j] * turn_speed_scalar
                 sim.setJointTargetVelocity(speed_joint, forward + turn_speed)
-                joint_speed = f'{sim.getJointTargetVelocity(speed_joint):.2f}'
-
                 if draw_text:
+
                     parent = sim.getObject(f'{self.base_name}{i}_{j}')
                     index = 0
                     obj = sim.getObjectChild(parent, index)
@@ -134,8 +142,11 @@ class Robot_Swarm:
 
                         obj = sim.getObjectChild(parent, index)
 
+                    joint_speed = sim.getJointTargetVelocity(speed_joint)
+                    print(joint_speed)
+
                     # Create a 3D text shape
-                    textShapeHandle = sim.generateTextShape(joint_speed, [1, 1, 1], 0.01)
+                    textShapeHandle = sim.generateTextShape(f'{"minus" if joint_speed < 0 else ""}{joint_speed:.2f}', [1, 1, 1], 0.01, True)
 
                     # Parent the shape to the robot
                     sim.setObjectParent(textShapeHandle, parent, True)
@@ -148,22 +159,29 @@ class Robot_Swarm:
         sim.startSimulation()
 
     def calc_distance_center(self):
+        """Calculates the self.distances matrix
+            each element inside self.distances is a factor of distance from center, directionality(left and right) and the column distance to center
+        """
         robot_size = 0.1  # 0.1 x 0.1
         center = (self.rows * robot_size / 2, self.cols * robot_size / 2)
         for i in range(self.rows):
             for j in range(self.cols):
                 robot_center = (i * robot_size + robot_size / 2, j * robot_size + robot_size / 2)
+
+                distance_to_center = dist(center, robot_center)
+
                 if center[0] - robot_center[0] == 0:
                     direction = 0
                 else:
                     direction = (center[0] - robot_center[0]) / abs(center[0] - robot_center[0])
 
-                self.distances[i][j] = (dist(center, robot_center), direction, abs((i + 0.5) * robot_size - center[0]))  # 0-distance 1-directionality, 2-distance from center
-                # print(self.distances[i][j][2])
+                column_distance_to_center = abs((i + 0.5) * robot_size - center[0])
+
+                self.distances[i][j] = distance_to_center * direction * column_distance_to_center
 
 
 if __name__ == '__main__':
-    swarm = Robot_Swarm('/Robot0_0', 4, 4, 0.12)
+    swarm = Robot_Swarm('/Robot0_0', 5, 5, 0.12)
     sim.stopSimulation()
     swarm.create_swarm()
 
@@ -172,7 +190,7 @@ if __name__ == '__main__':
     try:
         sleep(0.1)
         sim.startSimulation()
-        swarm.move(0, -10)
+        swarm.move(0, -10, True)
         done = False
         while True:
             angles = sim.getObjectOrientation(r)
@@ -188,5 +206,7 @@ if __name__ == '__main__':
 
             print(f'Simulation time: {t:.2f} [s]')
             sim.step()
-    except:
+    except Exception as e:
+        print(e)
+
         sim.stopSimulation()
