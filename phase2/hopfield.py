@@ -73,6 +73,7 @@ class Hopfield:
                 temp.append(forward_speed_wheel + turn_speed)
             mat.append(temp)
         self.patterns.append(self.norm_and_flatten_mat(mat))
+        print(self.patterns)
 
     @staticmethod
     def norm_and_flatten_mat(mat):
@@ -93,24 +94,29 @@ class Hopfield:
 
         return norm_flat_mat
 
+    def encode_pattern(self, pattern):
+        encoded_pattern = []
+        # print(pattern)
+        for number in pattern:
+            encoded_number = []
+            number = round(number * self.max_num)  # "Normalize" to the bit scale
+            num = format(number, f'0{self.bit_size - 1}b')  # Format the number into a binary string representation
+            # print(number)
+            # print(num)
+            encoded_number += [-1] if num[0] == '-' else [1]  # Parity bit
+
+            for _ in range(self.bit_size - 1 - len(num) - 1 * encoded_number[0] == 1):  # Padding with -1
+                encoded_number += [-1]
+
+            for digit in num[encoded_number[0] == -1:]:
+                encoded_number += [-1] if digit == '0' else [1]  # Add encoded bits
+
+            encoded_pattern += encoded_number
+        return encoded_pattern
+
     def encode_patterns(self):
         for i in range(len(self.patterns)):
-            temp_pattern = []
-            for number in self.patterns[i]:
-                encoded_number = []
-                number = round(number * self.max_num)  # "Normalize" to the bit scale
-                num = format(number, f'0{self.bit_size - 1}b')  # Format the number into a binary string representation
-
-                encoded_number += [-1] if num[0] == '-' else [1]  # Parity bit
-
-                for _ in range(self.bit_size - 1 - len(num) -1 * encoded_number[0] == 1):   # Padding with -1
-                    encoded_number += [-1]
-
-                for digit in num[encoded_number[0] == -1:]:
-                    encoded_number += [-1] if digit == '0' else [1]  # Add encoded bits
-
-                temp_pattern += encoded_number
-            self.patterns[i] = temp_pattern  # Swap patterns with the binary encoded pattern
+            self.patterns[i] = self.encode_pattern(self.patterns[i])  # Swap patterns with the binary encoded pattern
 
     def train_hopfield_network(self):
         """Train the Hopfield network using Hebbian learning rule."""
@@ -125,35 +131,75 @@ class Hopfield:
         return weights / len(self.patterns)
 
     def update(self):
-        pick = random.randint(0, len(self.patterns[0]) - 1)  # Pick random robot to update
+        pick = random.randint(0, len(self.patterns[0]) / self.bit_size - 1)  # Pick random neuron to update
+        pick = pick * self.bit_size                                         # Start of the robot block
 
-        weight = self.weights[pick]
-        val = np.dot(self.neurons, weight)
-        val = min(val, 1)
-        val = max(val, -1)
-        self.neurons[pick] = val
+        for neuron in range(pick, pick + self.bit_size):
+            weight = self.weights[neuron]
+            val = np.dot(self.neurons, weight)
+            val = min(val, 1)
+            val = max(val, -1)
+            self.neurons[neuron] = val
 
-    def decode(self, i, j):
+    def decode(self, r, c):
         """
-        :param i: row
-        :param j: column
+        :param r: row
+        :param c: column
         :return: string representation of the desired robot speed
         """
-        data = self.neurons[(i * self.cols + j) * self.bit_size:(i * self.cols + j + 1) * self.bit_size]
+        data = self.neurons[(r * self.cols + c) * self.bit_size:(r * self.cols + c + 1) * self.bit_size]
         data_str = ""
         for digit in data:
-            data_str += "0" if digit == -1 else "1"
+            data_str += "0" if digit <= 0 else "1"
         return data_str
+
+    def to_int(self, r, c):
+        """
+        :param r: row
+        :param c: column
+        :return: int representation of the desired robot speed
+        """
+        bit_str = self.decode(r, c)
+        sign = -1 if bit_str[0] == "0" else 1
+        num = sign * int(bit_str[1:], 2)
+        return num
+
+    def get_speed_mat(self):
+        mat = []
+        for i in range(self.rows):
+            temp = []
+            for j in range(self.cols):
+                temp.append(self.to_int(i, j))
+            mat.append(temp)
+        return mat
+
+    def get_pattern_speed(self, index):
+        temp = []
+        for i in range(0, len(self.patterns[index]), self.bit_size):
+            data_str = ""
+            for j in range(self.bit_size):
+                data_str += "0" if self.patterns[index][i + j] == -1 else "1"
+
+            sign = -1 if data_str[0] == "0" else 1
+            num = sign * int(data_str[1:], 2)
+
+            temp.append(num)
+        return temp
+
 
 
 if __name__ == '__main__':
     np.set_printoptions(suppress=True, precision=6)
-    hop = Hopfield(3, 3, 0.05, 4)
+    rows = 3
+    cols = 3
+    bit_size = 4
+    hop = Hopfield(rows, cols, 0.05, bit_size)
 
-    runs = hop.rows * hop.cols * hop.bit_size * 20
+    runs = hop.rows * hop.cols * 20
     start_time = time.time()
     for _ in range(runs):
         hop.update()
+        print(f'neurons {hop.neurons}')
     end_time = time.time()
     run_time = end_time - start_time
 
@@ -164,6 +210,12 @@ if __name__ == '__main__':
         hop.neurons
         # )
     )
-    print(hop.decode(1, 0))
 
+
+    # for i in range(rows):
+    #     for j in range(cols):
+    #         d = hop.decode(i, j)
+    #         print(d)
+    #         print(hop.to_int(i, j))
+    # print(hop.to_int(rows - 1, cols - 1))
 #   variable starting point leads to different end patterns

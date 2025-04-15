@@ -205,7 +205,7 @@ class Robot_Swarm:
                     # Rotate the text 90° around the X axis relative to 'parent'
                     sim.setObjectOrientation(textShapeHandle, parent, [0, 0, 0])
             mat.append(temp)
-        print(self.normalize_2d_list(mat))
+        # print(self.normalize_2d_list(mat))
         sim.startSimulation()
 
     @staticmethod
@@ -247,9 +247,31 @@ class Robot_Swarm:
                                         # * column_distance_to_center
                                         )
 
+    def get_robot_velocity(self, i, j):
+        speed_joint = sim.getObject(f'{self.base_name}{i}_{j}/Turn_joint/Speed_joint')
+        return sim.getJointTargetVelocity(speed_joint)
+
+    def get_all_velocities(self):
+        vel_mat = []
+        for i in range(self.rows):
+            temp = []
+            for j in range(self.cols):
+                temp.append(self.get_robot_velocity(i, j))
+            vel_mat.append(temp)
+        return vel_mat
+
+    def set_robot_velocity(self, i, j, velocity):
+        speed_joint = sim.getObject(f'{self.base_name}{i}_{j}/Turn_joint/Speed_joint')
+        sim.setJointTargetVelocity(speed_joint, velocity)
+
+    def set_all_velocities(self, vel_mat):
+        for i in range(self.rows):
+            for j in range(self.cols):
+                self.set_robot_velocity(i, j, vel_mat[i][j])
+
 
 if __name__ == '__main__':
-    swarm = Robot_Swarm('/Robot0_0', 5, 5, 0.12)
+    swarm = Robot_Swarm('/Robot0_0', 3, 3, 0.12)
     sim.stopSimulation()
     swarm.create_swarm()
 
@@ -257,7 +279,7 @@ if __name__ == '__main__':
     start_yaw = None
     try:
         sleep(0.1)
-        swarm.move(0, 90, False)
+        swarm.move(0, 90, True)
         sim.startSimulation()
         done = False
         while True:
